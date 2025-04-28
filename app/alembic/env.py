@@ -4,7 +4,8 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-from app.core.config import settings  # noqa
+from app.core.config import settings
+from app.models import *  # noqa
 
 target_metadata = SQLModel.metadata
 
