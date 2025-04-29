@@ -1,17 +1,19 @@
 import io
 import os
+import shutil
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from PIL import Image
-from sqlmodel import select
+from sqlmodel import delete, select
 
 from app.api.deps import SessionDep
-from app.models import Album, AlbumCreate, AlbumPublic
+from app.models import Album, AlbumCreate, AlbumPublic, ImagePublic
+from app.models import Image as ImageModel
 
 router = APIRouter(prefix="/album", tags=["Album"])
-UPLOAD_DIR = "./app/uploads"
+UPLOAD_DIR = "./app/static/uploads"
 
 ALLOWED_EXTENSIONS = {"image/jpeg", "image/png", "image/webp"}
 
@@ -71,6 +73,15 @@ async def create_image(
     ],
     db: SessionDep,
 ):
+    """
+    新增圖片
+
+    新增圖片時，會將圖片轉換為正常版和縮圖版，並存放在相簿的資料夾中
+    """
+    album = db.exec(select(Album).where(Album.id == album_id)).one_or_none()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
     normal_dir = os.path.join(UPLOAD_DIR, album_id, "normal")
     thumb_dir = os.path.join(UPLOAD_DIR, album_id, "thumbnail")
 
@@ -100,6 +111,8 @@ async def create_image(
         normal_path = os.path.join(normal_dir, normal_filename)
         normal.save(normal_path, "WEBP")
 
+        relative_normal_path = os.path.relpath(normal_path, UPLOAD_DIR)
+
         # 縮圖版轉換（裁成正方形512x512）
         thumb = original.copy()
         thumb.thumbnail((512, 512))
@@ -108,8 +121,97 @@ async def create_image(
         thumb_path = os.path.join(thumb_dir, thumb_filename)
         thumb.save(thumb_path, "WEBP")
 
+        relative_thumb_path = os.path.relpath(thumb_path, UPLOAD_DIR)
+
         uploaded_files.append(
-            {"normal": f"/{normal_path}", "thumbnail": f"/{thumb_path}"}
+            {"normal": relative_normal_path, "thumbnail": relative_thumb_path}
         )
 
+        static_url = "/static/uploads/"
+
+        image = ImageModel(
+            album_id=album_id,
+            original_filename=file.filename,
+            normal_url=static_url + relative_normal_path,
+            thumbnail_url=static_url + relative_thumb_path,
+        )
+        db.add(image)
+        db.commit()
+        db.refresh(image)
+
     return {"filenames": [file.filename for file in files]}
+
+
+@router.get("/{album_id}/images", response_model=list[ImagePublic])
+def get_images(album_id: str, db: SessionDep):
+    images = db.exec(select(ImageModel).where(ImageModel.album_id == album_id)).all()
+
+    return images
+
+
+@router.get("/{album_id}/images/{image_id}", response_model=ImagePublic)
+def get_image(album_id: str, image_id: int, db: SessionDep):
+    image = db.exec(
+        select(ImageModel).where(
+            ImageModel.album_id == album_id, ImageModel.id == image_id
+        )
+    ).one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return image
+
+
+@router.delete("/{album_id}/images/{image_id}", status_code=204)
+def delete_image(album_id: UUID, image_id: UUID, db: SessionDep):
+    image = db.exec(
+        select(ImageModel).where(
+            ImageModel.album_id == album_id, ImageModel.id == image_id
+        )
+    ).one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    db.delete(image)
+    db.commit()
+
+    normal_is_exist = os.path.exists("./app" + image.normal_url)
+    thumb_is_exist = os.path.exists("./app" + image.thumbnail_url)
+
+    if normal_is_exist:
+        os.remove("./app" + image.normal_url)
+
+    if thumb_is_exist:
+        os.remove("./app" + image.thumbnail_url)
+
+    return None
+
+
+@router.delete("/{album_id}", status_code=204)
+def delete_album(album_id: UUID, db: SessionDep):
+    """
+    刪除相簿
+
+    刪除相簿時，會刪除相簿內的所有圖片
+    """
+    album = db.exec(select(Album).where(Album.id == album_id)).one_or_none()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    db.exec(delete(ImageModel).where(ImageModel.album_id == album_id))
+    db.delete(album)
+    db.commit()
+
+    album_dir = os.path.join(UPLOAD_DIR, str(album_id))
+    if os.path.exists(album_dir):
+        try:
+            shutil.rmtree(album_dir)
+        except OSError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to remove album directory: {e.strerror}",
+            )
+
+    return None

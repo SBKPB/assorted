@@ -40,7 +40,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
     volumes:
-      - ./app/uploads:/app/app/uploads
+      - ./app/static/uploads:/app/app/static/uploads
     ports:
       - "8000:8000"
 
