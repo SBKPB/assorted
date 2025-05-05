@@ -12,7 +12,7 @@ from app.api.deps import SessionDep
 from app.models import Album, AlbumCreate, AlbumPublic, ImagePublic
 from app.models import Image as ImageModel
 
-router = APIRouter(prefix="/album", tags=["Album"])
+router = APIRouter(prefix="/albums", tags=["Album"])
 UPLOAD_DIR = "./app/static/uploads"
 
 ALLOWED_EXTENSIONS = {"image/jpeg", "image/png", "image/webp"}
@@ -38,7 +38,7 @@ def get_albums(db: SessionDep):
 
 
 @router.get("/{album_id}", response_model=AlbumPublic)
-def get_album(album_id: str, db: SessionDep):
+def get_album(album_id: UUID, db: SessionDep):
     album = db.exec(select(Album).where(Album.id == album_id)).one_or_none()
 
     if not album:
@@ -67,7 +67,7 @@ def create_album(album_info: AlbumCreate, db: SessionDep):
     "/{album_id}/images",
 )
 async def create_image(
-    album_id: str,
+    album_id: UUID,
     files: Annotated[
         list[UploadFile], File(description="Multiple files as UploadFile")
     ],
@@ -82,8 +82,8 @@ async def create_image(
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
 
-    normal_dir = os.path.join(UPLOAD_DIR, album_id, "normal")
-    thumb_dir = os.path.join(UPLOAD_DIR, album_id, "thumbnail")
+    normal_dir = os.path.join(UPLOAD_DIR, str(album_id), "normal")
+    thumb_dir = os.path.join(UPLOAD_DIR, str(album_id), "thumbnail")
 
     os.makedirs(normal_dir, exist_ok=True)
     os.makedirs(thumb_dir, exist_ok=True)
@@ -143,14 +143,14 @@ async def create_image(
 
 
 @router.get("/{album_id}/images", response_model=list[ImagePublic])
-def get_images(album_id: str, db: SessionDep):
+def get_images(album_id: UUID, db: SessionDep):
     images = db.exec(select(ImageModel).where(ImageModel.album_id == album_id)).all()
 
     return images
 
 
 @router.get("/{album_id}/images/{image_id}", response_model=ImagePublic)
-def get_image(album_id: str, image_id: int, db: SessionDep):
+def get_image(album_id: UUID, image_id: UUID, db: SessionDep):
     image = db.exec(
         select(ImageModel).where(
             ImageModel.album_id == album_id, ImageModel.id == image_id
