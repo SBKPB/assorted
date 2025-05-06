@@ -37,6 +37,7 @@
 
 - [Album-Android 影片展示](https://youtube.com/shorts/qKNCqSaeQis)
 - [Album-iOS 影片展示](https://youtube.com/shorts/Avmr8ThnCos)
+- [Album-Web 展示](https://v0-next-js15-photo-album.vercel.app/)
 
 ---
 
